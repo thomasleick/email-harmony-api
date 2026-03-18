@@ -54,7 +54,7 @@ Output:
 
 class LLMService:
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = genai.GenerativeModel('gemini-flash-latest')
         # Temperatura 0.0 garante determinismo. JSON mime_type garante schema robusto.
         self.generation_config = GenerationConfig(
             temperature=0.0,
