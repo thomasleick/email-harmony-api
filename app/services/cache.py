@@ -9,7 +9,9 @@ class SimpleMemoryCache:
         self._cache: Dict[str, Tuple[float, Any]] = {}
 
     def _generate_key(self, text: str) -> str:
-        return hashlib.sha256(text.encode('utf-8')).hexdigest()
+        # Adiciona um sufixo de versão para invalidar cache se o schema mudar
+        version = "v2"
+        return hashlib.sha256(f"{version}:{text}".encode('utf-8')).hexdigest()
 
     def get(self, text: str) -> Any | None:
         key = self._generate_key(text)
