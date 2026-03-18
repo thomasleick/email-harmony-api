@@ -4,6 +4,7 @@ from app.models.schemas import AnalyzeEmailResponse
 from app.services.cache import cache
 from app.services.llm_service import llm_service
 from app.utils.file_parser import parse_text_file, parse_pdf_file
+from app.utils.preprocessor import preprocess_email_text
 import logging
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,9 @@ async def analyze_email_endpoint(
         raise HTTPException(status_code=400, detail="O texto fornecido para análise está vazio após o parse.")
 
     logger.info(f"Analisando Payload; Hash Cache será verificado.")
+
+    # 0. NLP Preprocessing
+    final_text = preprocess_email_text(final_text)
 
     # 1. Recupera do TTL Hash Cache 
     cached_result = cache.get(final_text)
