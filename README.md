@@ -1,65 +1,65 @@
-# Email Harmony API
+# Email Harmony API 🧠
 
-Backend financeiro escalável construído com **FastAPI** e orquestrado por Clean Architecture, visando classificar emails como "Produtivos" ou "Improdutivos" usando inteligência artificial de ponta (Gemini 1.5).
+Backend financeiro escalável construído com **FastAPI** e orquestrado por Clean Architecture, transformando emails em dados operacionais acionáveis usando **GenAI (Gemini 1.5 Flash)**.
 
-## 🚀 Arquitetura e Engenharia
+## 🚀 Arquitetura e Engenharia de Elite
 
-Este projeto "grita Engenharia Sênior", entregando:
-1. **Domain Layer:** Entidades agnósticas (Pydantic models e Enums separadamente).
-2. **LLM Determinístico:** Modelos isolados em `Service` controlados com temperatura fechada `0.0`.
-3. **Resiliência a Falhas:** Sistema agressivo de `Fallback` que suporta anomalias de formatação da IA. Regex atua em segundo nível caso o JSON venha envelopado em markdown falso. Não há crashes.
-4. **Cache Eficiente:** Memória global usando assinatura forte via `SHA-256` combinado com `Time-To-Live` (TTL) de 1 hora. Evita custo dobrado no LLM para textos idênticos.
-5. **Análise Robusta de PDF:** Tolerância e validação profunda de Empty/No-text strings usando `pdfplumber`.
-6. **Deploy Ready:** `Dockerfile` multi-stage ready (gunicorn/uvicorn bind) na raiz.
+Este projeto entrega um motor de triagem de nível corporativo:
+1.  **Inteligência Multidimensional:** Além de classificar entre "Produtivo" e "Improdutivo", o motor detecta **Sentimento** (-1.0 a 1.0) e **Urgência**, gerando um **Priority Score** (0.0 a 1.0) para triagem automática.
+2.  **NLP Preprocessing:** Pipeline dedicado para normalização Unicode, remoção de cabeçalhos de email (`From:`, `Subject:`) e colapso de espaços mortos em arquivos `.pdf` e `.txt`.
+3.  **LLM Determinístico:** Configurado em `temperature: 0.0` para máxima consistência nas respostas sugeridas.
+4.  **Resiliência & Parsing:** Sistema de `Fallback` estruturado e reparo de JSON via Regex. Não há crashes por formatação da IA.
+5.  **Cache Inteligente v2:** Sistema de cache em memória com assinatura SHA-256 e **versionamento de chave**, garantindo que mudanças no schema invalidem dados obsoletos automaticamente.
+6.  **Pydantic V2:** Validação rigorosa de tipos e ranges (ex: scores sempre entre 0 e 1).
 
 ## 🛠 Tecnologias
 
-- **Python 3.12+**
-- **FastAPI** + **Uvicorn**
-- **Pydantic V2**
-- **Google Generative AI** (Gemini)
-- **Pytest** para asserções
+-   **Python 3.12+**
+-   **FastAPI** + **Uvicorn**
+-   **Pydantic V2** (Validation & Serialization)
+-   **Google Generative AI** (Gemini Flash)
+-   **pdfplumber** (Extração determinística de PDF)
 
-## 📦 Como rodar localmente
+## 📦 Instalação e Execução
 
-1. Inicialize seu virtualenv:
-\`\`\`bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-\`\`\`
+1.  **Virtualenv:**
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    ```
 
-2. Defina suas variáveis (opcional):
-Crie um arquivo `.env` na raiz:
-\`\`\`env
-GEMINI_API_KEY=Sua_Chave_Aqvi_AIzaSy...
-CACHE_TTL_SECONDS=3600
-\`\`\`
+2.  **Configuração:**
+    Crie um arquivo `.env` na raiz:
+    ```env
+    GEMINI_API_KEY=Sua_Chave_Ai...
+    CACHE_TTL_SECONDS=3600
+    ```
 
-3. Gire o motor:
-\`\`\`bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-\`\`\`
+3.  **Start:**
+    ```bash
+    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ```
 
-## 🧪 Testes Unitários
+## 🧪 Testes
 
-Executamos `pytest` de forma autônoma:
-\`\`\`bash
+```bash
 pytest tests/ -v
-\`\`\`
+```
 
 ## 🔌 API Endpoint: `POST /api/v1/analyze-email`
 
-Aceita form inputs de multiplas formas (Multipart / Form-Data):
-- Campo `text`: string limpa do corpo do email
-- Campo `file`: upload binário de arquivo (`.txt` ou `.pdf`)
-
-**Exemplo Retorno JSON Rigoroso:**
-\`\`\`json
+**Exemplo de Resposta Inteligente:**
+```json
 {
   "classification": "Produtivo",
   "confidence": 0.98,
-  "reasoning": "Texto possui dados de contrato bancário",
-  "suggested_response": "Prezado, estamos analisando..."
+  "sentiment": "Negativo",
+  "sentiment_score": -0.85,
+  "urgency": "Alta",
+  "urgency_score": 0.95,
+  "priority_score": 0.98,
+  "reasoning": "Cliente frustrado reportando bloqueio de conta com prazo final hoje.",
+  "suggested_response": "Prezado, lamentamos o ocorrido..."
 }
-\`\`\`
+```
