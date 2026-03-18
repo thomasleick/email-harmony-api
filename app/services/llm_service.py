@@ -11,51 +11,62 @@ logger = logging.getLogger(__name__)
 if settings.GEMINI_API_KEY:
     genai.configure(api_key=settings.GEMINI_API_KEY)
 
-SYSTEM_PROMPT = """Você é um analista financeiro sênior corporativo.
-Classifique o email recebido e retorne a resposta OBRIGATORIAMENTE formatada em JSON ESTRITO.
+SYSTEM_PROMPT = """Você é um sistema de triagem inteligente e analista de CRM sênior.
+Sua tarefa é analisar emails financeiros, classificar sua intenção, detectar o sentimento do cliente e determinar a urgência operacional.
 
-### DEFINIÇÃO DAS CATEGORIAS
-1. **Produtivo**: Emails com demanda operacional, dúvidas sobre contas, envios de comprovantes, solicitações de suporte, pedidos de resgate/transferência.
-2. **Improdutivo**: Emails sem necessidade de ação como saudações isoladas, felicitações, spam ou newsletters.
+### 1. DEFINIÇÃO DE CATEGORIAS (classification)
+- **Produtivo**: Demandas operacionais, dúvidas sobre contas, envios de comprovantes, suporte, resgates.
+- **Improdutivo**: Saudações, newsletters, spam, elogios isolados sem demanda.
 
-### INSTRUÇÕES E FORMATO
-- Analise o contexto sem alucinar focar nos fatos.
-- Escreva a "suggested_response" em PT-BR corporativo, gentil e direto.
-- Se Produtivo, garanta ao cliente que o caso está em análise. Se Improdutivo, gere uma constatação educada ou ignore se for spam.
-- O formato final de saída DEVE OBRIGATORIAMENTE ser JSON válido e seguir a estrutura exata:
+### 2. SENTIMENTO (sentiment & sentiment_score)
+Analise o tom emocional do texto:
+- **Positivo** (score: 0.1 a 1.0): Agradecimentos, elogios, satisfação.
+- **Neutro** (score: -0.1 a 0.1): Consultas puramente técnicas, informativas.
+- **Negativo** (score: -1.0 a -0.1): Reclamações, frustração, irritação.
 
+### 3. URGÊNCIA (urgency & urgency_score)
+Determine o nível de prioridade baseado em regras explícitas:
+- **Alta** (score: 0.8 a 1.0): Cliente irritado, risco financeiro iminente, bloqueio de conta/operação, prazo final explícito ("preciso hoje", "até amanhã").
+- **Média** (score: 0.4 a 0.7): Solicitações que exigem resposta humana, dúvidas operacionais padrão, envio de documentos.
+- **Baixa** (score: 0.0 a 0.3): Agradecimentos, informativos sem prazo, sugestões, feedbacks.
+
+### 4. SCORE DE PRIORIDADE (priority_score)
+Calcule um valor de 0.0 a 1.0 combinando Urgência e Sentimento.
+Regra sugerida: Prioridade máxima para Urgência Alta + Sentimento Negativo.
+
+### FORMATO DE SAÍDA (JSON ESTRITO)
+Retorne OBRIGATORIAMENTE um JSON válido com todos os campos preenchidos:
 {
-  "classification": "Produtivo" ou "Improdutivo",
-  "confidence": <float de 0.0 a 1.0>,
-  "reasoning": "<explicação curta de no máximo 2 linhas>",
-  "suggested_response": "<texto da resposta sugerida>"
+  "classification": "Produtivo" | "Improdutivo",
+  "confidence": float (0.0 a 1.0),
+  "sentiment": "Positivo" | "Neutro" | "Negativo",
+  "sentiment_score": float (-1.0 a 1.0),
+  "urgency": "Alta" | "Média" | "Baixa",
+  "urgency_score": float (0.0 a 1.0),
+  "priority_score": float (0.0 a 1.0),
+  "reasoning": "string curta (max 2 linhas)",
+  "suggested_response": "string em PT-BR corporativo"
 }
 
-### EXEMPLOS (FEW-SHOT)
-
-Input: "Gostaria de solicitar o extrato do mês corrente referente à conta 1234."
+### EXEMPLO
+Input: "Preciso do meu extrato agora, estou tentando fechar um contrato e não consigo acessar o app! Absurdo."
 Output:
 {
   "classification": "Produtivo",
-  "confidence": 0.98,
-  "reasoning": "O cliente solicita documento financeiro da sua conta, configurando ação do suporte.",
-  "suggested_response": "Prezado,\\n\\nRecebemos a sua solicitação. Nosso time já está processando e o extrato será enviado para seu email seguro em breve.\\n\\nAtenciosamente,\\nEquipe."
-}
-
-Input: "Parabéns equipe pelo excelente serviço de vocês! Excelente sexta-feira."
-Output:
-{
-  "classification": "Improdutivo",
   "confidence": 0.99,
-  "reasoning": "Apenas um elogio isolado de fim de semana, sem demanda operacional.",
-  "suggested_response": "Prezado,\\n\\nAgradecemos profundamente o seu reconhecimento! Tenha uma excelente sexta-feira.\\n\\nAtenciosamente,\\nEquipe."
+  "sentiment": "Negativo",
+  "sentiment_score": -0.85,
+  "urgency": "Alta",
+  "urgency_score": 0.95,
+  "priority_score": 0.98,
+  "reasoning": "Cliente com bloqueio de acesso e prazo crítico (contrato), demonstrando alta frustração.",
+  "suggested_response": "Prezado,\\n\\nLamentamos o transtorno. Identificamos a urgência na sua solicitação. Nosso suporte técnico já está priorizando o seu acesso e o extrato será enviado para seu email seguro em instantes.\\n\\nAtenciosamente."
 }
 """
 
 class LLMService:
     def __init__(self):
         self.model = genai.GenerativeModel('gemini-flash-latest')
-        # Temperatura 0.0 garante determinismo. JSON mime_type garante schema robusto.
         self.generation_config = GenerationConfig(
             temperature=0.0,
             top_p=0.1,
@@ -68,7 +79,7 @@ class LLMService:
              return self._fallback_no_api_key(text)
 
         try:
-            prompt = f"{SYSTEM_PROMPT}\n\n[INÍCIO DO EMAIL DO CLIENTE]\n{text}\n[FIM DO EMAIL DO CLIENTE]"
+            prompt = f"{SYSTEM_PROMPT}\n\n[TEXTO DO CLIENTE]\n{text}\n"
             
             response = self.model.generate_content(
                 prompt,
@@ -81,36 +92,49 @@ class LLMService:
             return self._fallback_error(str(e))
 
     def _parse_json(self, raw_text: str) -> Dict[str, Any]:
-        """Tenta parsear JSON de forma resiliente, considerando eventuais anomalias da IA."""
         try:
-            return json.loads(raw_text)
+            data = json.loads(raw_text)
+            return self._ensure_fields(data)
         except json.JSONDecodeError:
             match = re.search(r'\{.*\}', raw_text, re.DOTALL)
             if match:
                 try:
-                    return json.loads(match.group(0))
+                    data = json.loads(match.group(0))
+                    return self._ensure_fields(data)
                 except Exception:
                     pass
-            logger.warning("Falha crítica no JSON da IA, indo pro fallback. Texto bruto: %s", raw_text)
             return self._fallback_error("Erro de Parsing de Estrutura da IA.")
 
-    def _fallback_error(self, reason: str) -> Dict[str, Any]:
-        """Fallback ultra robusto, evita Crash da API do backend e frontend."""
-        return {
+    def _ensure_fields(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Garante que todos os campos obrigatórios existam com valores padrão se necessário."""
+        defaults = {
             "classification": "Produtivo",
             "confidence": 0.5,
-            "reasoning": f"Fallback ativado devido a erro interno ou timeout da IA: {reason}",
-            "suggested_response": "Prezado,\\n\\nRecebemos seu email e nossa equipe iniciou a análise da solicitação. Retornaremos o mais breve possível com atualizações.\\n\\nAtenciosamente."
+            "sentiment": "Neutro",
+            "sentiment_score": 0.0,
+            "urgency": "Média",
+            "urgency_score": 0.5,
+            "priority_score": 0.5,
+            "reasoning": "Processado com campos padrão.",
+            "suggested_response": "Prezado,\\n\\nRecebemos sua mensagem e estamos analisando sua solicitação.\\n\\nAtenciosamente."
         }
+        for field, default in defaults.items():
+            if field not in data:
+                data[field] = default
+        return data
+
+    def _fallback_error(self, reason: str) -> Dict[str, Any]:
+        return self._ensure_fields({"reasoning": f"Erro detectado: {reason}"})
         
     def _fallback_no_api_key(self, text: str) -> Dict[str, Any]:
-        """Para funcionar em desenvolvimento se a chave (GEMINI_API_KEY) ainda não foi setada no .env"""
-        is_prod = len(text) > 30
-        return {
-            "classification": "Produtivo" if is_prod else "Improdutivo",
-            "confidence": 0.82,
-            "reasoning": "Resolução de Mock via Fallback (Nenhuma API Key Configurada)",
-            "suggested_response": "Prezado,\\n\\nAgradecemos o contato. Sua manifestação foi recebida com sucesso e nossa equipe responderá em breve.\\n\\nAtenciosamente,"
-        }
+        is_urgent = "urgente" in text.lower() or "hoje" in text.lower()
+        return self._ensure_fields({
+            "classification": "Produtivo" if len(text) > 30 else "Improdutivo",
+            "confidence": 0.8,
+            "urgency": "Alta" if is_urgent else "Baixa",
+            "urgency_score": 0.9 if is_urgent else 0.2,
+            "priority_score": 0.85 if is_urgent else 0.3,
+            "reasoning": "Modo de simulação (Sem API Key)."
+        })
 
 llm_service = LLMService()
