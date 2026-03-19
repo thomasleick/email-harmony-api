@@ -11,57 +11,49 @@ logger = logging.getLogger(__name__)
 if settings.GEMINI_API_KEY:
     genai.configure(api_key=settings.GEMINI_API_KEY)
 
-SYSTEM_PROMPT = """Você é um sistema de triagem inteligente e analista de CRM sênior.
-Sua tarefa é analisar emails financeiros, classificar sua intenção, detectar o sentimento do cliente e determinar a urgência operacional.
+SYSTEM_PROMPT = """Você é um sistema de triagem inteligente e analista de CRM sênior especializado no setor financeiro.
+Sua tarefa é analisar o teor de emails, classificar intenção, detectar sentimento e determinar a urgência.
 
-### 1. DEFINIÇÃO DE CATEGORIAS (classification)
-- **Produtivo**: Demandas operacionais, dúvidas sobre contas, envios de comprovantes, suporte, resgates.
-- **Improdutivo**: Saudações, newsletters, spam, elogios isolados sem demanda.
+### 1. REGRAS DE CLASSIFICAÇÃO (classification)
+- **Produtivo**: Emails com demandas claras, solicitações de serviço, dúvidas técnicas, envio de documentos, reclamações operacionais ou pedidos de resgate.
+- **Improdutivo**: Apenas saudações, elogios sem demanda, spam, newsletters de marketing ou mensagens automáticas.
 
 ### 2. SENTIMENTO (sentiment & sentiment_score)
-Analise o tom emocional do texto:
-- **Positivo** (score: 0.1 a 1.0): Agradecimentos, elogios, satisfação.
-- **Neutro** (score: -0.1 a 0.1): Consultas puramente técnicas, informativas.
-- **Negativo** (score: -1.0 a -0.1): Reclamações, frustração, irritação.
+- **Positivo** (0.1 a 1.0): Tons gentis, elogios, satisfação.
+- **Neutro** (-0.1 a 0.1): Linguagem técnica fria, consultas objetivas.
+- **Negativo** (-1.0 a -0.1): Irritação, uso de CAPS LOCK, sarcasmo, ameaças de cancelamento ou reclamações de erro.
 
 ### 3. URGÊNCIA (urgency & urgency_score)
-Determine o nível de prioridade baseado em regras explícitas:
-- **Alta** (score: 0.8 a 1.0): Cliente irritado, risco financeiro iminente, bloqueio de conta/operação, prazo final explícito ("preciso hoje", "até amanhã").
-- **Média** (score: 0.4 a 0.7): Solicitações que exigem resposta humana, dúvidas operacionais padrão, envio de documentos.
-- **Baixa** (score: 0.0 a 0.3): Agradecimentos, informativos sem prazo, sugestões, feedbacks.
+- **Alta** (0.8 a 1.0): Prazos imediatos ("hoje", "amanhã"), bloqueios de conta, risco financeiro, tom de raiva extrema.
+- **Média** (0.4 a 0.7): Consultas padrão que exigem ação humana manual, dúvidas sobre produtos.
+- **Baixa** (0.0 a 0.3): Agradecimentos, feedbacks, informativos sem ação urgente.
 
-### 4. SCORE DE PRIORIDADE (priority_score)
-Calcule um valor de 0.0 a 1.0 combinando Urgência e Sentimento.
-Regra sugerida: Prioridade máxima para Urgência Alta + Sentimento Negativo.
+### 4. PRIORIDADE (priority_score)
+Calcule de 0.0 a 1.0. Prioridade = (Urgência + (Absoluto de Sentimento se Negativo)) / 2.
+Ex: Urgência Alta (0.9) + Sentimento Negativo (-0.8) = Prioridade muito alta (proximo de 1.0).
 
 ### FORMATO DE SAÍDA (JSON ESTRITO)
-Retorne OBRIGATORIAMENTE um JSON válido com todos os campos preenchidos:
+Retorne APENAS o JSON no formato:
 {
   "classification": "Produtivo" | "Improdutivo",
-  "confidence": float (0.0 a 1.0),
+  "confidence": float (0.0-1.0),
   "sentiment": "Positivo" | "Neutro" | "Negativo",
   "sentiment_score": float (-1.0 a 1.0),
   "urgency": "Alta" | "Média" | "Baixa",
-  "urgency_score": float (0.0 a 1.0),
-  "priority_score": float (0.0 a 1.0),
-  "reasoning": "string curta (max 2 linhas)",
-  "suggested_response": "string em PT-BR corporativo"
+  "urgency_score": float (0.0-1.0),
+  "priority_score": float (0.0-1.0),
+  "reasoning": "Resumo técnico da decisão (máx 200 caracteres)",
+  "suggested_response": "Texto corporativo em PT-BR. Use \\n para quebras de linha."
 }
 
-### EXEMPLO
-Input: "Preciso do meu extrato agora, estou tentando fechar um contrato e não consigo acessar o app! Absurdo."
-Output:
-{
-  "classification": "Produtivo",
-  "confidence": 0.99,
-  "sentiment": "Negativo",
-  "sentiment_score": -0.85,
-  "urgency": "Alta",
-  "urgency_score": 0.95,
-  "priority_score": 0.98,
-  "reasoning": "Cliente com bloqueio de acesso e prazo crítico (contrato), demonstrando alta frustração.",
-  "suggested_response": "Prezado,\\n\\nLamentamos o transtorno. Identificamos a urgência na sua solicitação. Nosso suporte técnico já está priorizando o seu acesso e o extrato será enviado para seu email seguro em instantes.\\n\\nAtenciosamente."
-}
+3. [INPUT]: \"Bom dia! Só passando para desejar uma ótima semana a todos.\"
+   [OUTPUT]: {\"classification\": \"Improdutivo\", \"confidence\": 0.98, \"sentiment\": \"Positivo\", \"sentiment_score\": 0.8, \"urgency\": \"Baixa\", \"urgency_score\": 0.1, \"priority_score\": 0.1, \"reasoning\": \"Saudação social sem demanda operacional.\", \"suggested_response\": \"Bom dia! Agradecemos o contato e desejamos uma excelente semana para você também!\"}
+
+4. [INPUT]: \"Esqueci minha senha do aplicativo e não consigo realizar o primeiro acesso. Podem me ajudar?\"
+   [OUTPUT]: {\"classification\": \"Produtivo\", \"confidence\": 0.99, \"sentiment\": \"Neutro\", \"sentiment_score\": 0.0, \"urgency\": \"Média\", \"urgency_score\": 0.6, \"priority_score\": 0.6, \"reasoning\": \"Bloqueio de acesso técnico (senha), requer suporte padrão.\", \"suggested_response\": \"Olá! Para recuperar sua senha, basta clicar em 'Esqueci minha senha' na tela inicial do app. Enviamos um link de recuperação para seu email cadastrado. Atenciosamente.\"}
+
+5. [INPUT]: \"Segue em anexo o comprovante da transferência de R$ 200,00 que realizei hoje cedo para minha conta corrente.\"
+   [OUTPUT]: {\"classification\": \"Produtivo\", \"confidence\": 0.95, \"sentiment\": \"Neutro\", \"sentiment_score\": 0.1, \"urgency\": \"Média\", \"urgency_score\": 0.4, \"priority_score\": 0.4, \"reasoning\": \"Envio de documento comprobatório de rotina operacional.\", \"suggested_response\": \"Recebemos seu comprovante com sucesso. O valor será processado e creditado em sua conta conforme os prazos padrão. Obrigado!\"}
 """
 
 class LLMService:
@@ -79,7 +71,9 @@ class LLMService:
              return self._fallback_no_api_key(text)
 
         try:
-            prompt = f"{SYSTEM_PROMPT}\n\n[TEXTO DO CLIENTE]\n{text}\n"
+            # Sanitização básica de input
+            safe_text = text[:4000] # Evitar overflow de tokens por segurança
+            prompt = f"{SYSTEM_PROMPT}\n\n[ANALISE O SEGUINTE TEXTO]:\n{safe_text}\n"
             
             response = self.model.generate_content(
                 prompt,
@@ -92,49 +86,76 @@ class LLMService:
             return self._fallback_error(str(e))
 
     def _parse_json(self, raw_text: str) -> Dict[str, Any]:
+        # Limpeza agressiva de markdown blocks (Gemini às vezes ignora o mime_type e coloca ```json)
+        clean_text = raw_text.strip()
+        if clean_text.startswith("```"):
+            clean_text = re.sub(r'^```[a-z]*\n?', '', clean_text, flags=re.MULTILINE)
+            clean_text = re.sub(r'\n?```$', '', clean_text, flags=re.MULTILINE)
+
         try:
-            data = json.loads(raw_text)
-            return self._ensure_fields(data)
+            data = json.loads(clean_text)
+            return self._normalize_and_ensure(data)
         except json.JSONDecodeError:
-            match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+            # Fallback secundário via Regex se falhar o carregamento direto
+            match = re.search(r'\{.*\}', clean_text, re.DOTALL)
             if match:
                 try:
                     data = json.loads(match.group(0))
-                    return self._ensure_fields(data)
+                    return self._normalize_and_ensure(data)
                 except Exception:
                     pass
-            return self._fallback_error("Erro de Parsing de Estrutura da IA.")
+            return self._fallback_error("Falha estrutural no JSON da IA.")
 
-    def _ensure_fields(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Garante que todos os campos obrigatórios existam com valores padrão se necessário."""
+    def _normalize_and_ensure(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Normaliza campos de enum e garante tipos numéricos corretos."""
+        
+        # 1. Normalização de Enum (Case safety)
+        def to_enum_case(val, options):
+            if not isinstance(val, str): return val
+            for opt in options:
+                if val.lower() == opt.lower(): return opt
+            return options[0] # Default para o primeiro se não achar
+
+        data["classification"] = to_enum_case(data.get("classification"), ["Produtivo", "Improdutivo"])
+        data["sentiment"] = to_enum_case(data.get("sentiment"), ["Positivo", "Neutro", "Negativo"])
+        data["urgency"] = to_enum_case(data.get("urgency"), ["Baixa", "Média", "Alta"])
+
+        # 2. Garantia de Scores (Bounds safety)
+        def clamp(val, min_v, max_v, default):
+            try:
+                f_val = float(val)
+                return max(min_v, min(max_v, f_val))
+            except (ValueError, TypeError):
+                return default
+
+        data["confidence"] = clamp(data.get("confidence"), 0.0, 1.0, 0.5)
+        data["sentiment_score"] = clamp(data.get("sentiment_score"), -1.0, 1.0, 0.0)
+        data["urgency_score"] = clamp(data.get("urgency_score"), 0.0, 1.0, 0.5)
+        data["priority_score"] = clamp(data.get("priority_score"), 0.0, 1.0, 0.5)
+
+        # 3. Campos de Texto
         defaults = {
-            "classification": "Produtivo",
-            "confidence": 0.5,
-            "sentiment": "Neutro",
-            "sentiment_score": 0.0,
-            "urgency": "Média",
-            "urgency_score": 0.5,
-            "priority_score": 0.5,
-            "reasoning": "Processado com campos padrão.",
-            "suggested_response": "Prezado,\\n\\nRecebemos sua mensagem e estamos analisando sua solicitação.\\n\\nAtenciosamente."
+            "reasoning": "Análise processada com parâmetros de segurança.",
+            "suggested_response": "Prezado,\\n\\nRecebemos sua mensagem e já estamos analisando o ocorrido.\\n\\nAtenciosamente."
         }
         for field, default in defaults.items():
-            if field not in data:
+            if field not in data or not data[field]:
                 data[field] = default
+        
         return data
 
     def _fallback_error(self, reason: str) -> Dict[str, Any]:
-        return self._ensure_fields({"reasoning": f"Erro detectado: {reason}"})
+        return self._normalize_and_ensure({"reasoning": f"Erro técnico: {reason}"})
         
     def _fallback_no_api_key(self, text: str) -> Dict[str, Any]:
-        is_urgent = "urgente" in text.lower() or "hoje" in text.lower()
-        return self._ensure_fields({
-            "classification": "Produtivo" if len(text) > 30 else "Improdutivo",
-            "confidence": 0.8,
+        is_urgent = any(word in text.lower() for word in ["urgente", "hoje", "bloqueio", "prazo"])
+        return self._normalize_and_ensure({
+            "classification": "Produtivo" if len(text) > 20 else "Improdutivo",
+            "confidence": 0.85,
             "urgency": "Alta" if is_urgent else "Baixa",
-            "urgency_score": 0.9 if is_urgent else 0.2,
-            "priority_score": 0.85 if is_urgent else 0.3,
-            "reasoning": "Modo de simulação (Sem API Key)."
+            "urgency_score": 0.95 if is_urgent else 0.2,
+            "priority_score": 0.9 if is_urgent else 0.25,
+            "reasoning": "Análise em modo de demonstração local (Offline)."
         })
 
 llm_service = LLMService()
