@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class LLMService:
     def __init__(self):
         # Singleton pattern: Reutilizamos a instância do model
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = genai.GenerativeModel('gemini-flash-latest')
         self.generation_config = GenerationConfig(
             temperature=0.1,
             top_p=0.9,
