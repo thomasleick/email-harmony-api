@@ -43,17 +43,21 @@ Retorne APENAS o JSON no formato:
   "urgency_score": float (0.0-1.0),
   "priority_score": float (0.0-1.0),
   "reasoning": "Resumo técnico da decisão (máx 200 caracteres)",
-  "suggested_response": "Texto corporativo em PT-BR. Use \\n para quebras de linha."
+  "suggested_response": "Texto corporativo em PT-BR."
 }
 
-3. [INPUT]: \"Bom dia! Só passando para desejar uma ótima semana a todos.\"
-   [OUTPUT]: {\"classification\": \"Improdutivo\", \"confidence\": 0.98, \"sentiment\": \"Positivo\", \"sentiment_score\": 0.8, \"urgency\": \"Baixa\", \"urgency_score\": 0.1, \"priority_score\": 0.1, \"reasoning\": \"Saudação social sem demanda operacional.\", \"suggested_response\": \"Bom dia! Agradecemos o contato e desejamos uma excelente semana para você também!\"}
+### EXEMPLOS DE REFERÊNCIA
+1. [INPUT]: "MEU CARTÃO NÃO FUNCIONA E PRECISO PAGAR O HOSPITAL AGORA!"
+   [OUTPUT]: {"classification": "Produtivo", "confidence": 1.0, "sentiment": "Negativo", "sentiment_score": -0.9, "urgency": "Alta", "urgency_score": 1.0, "priority_score": 1.0, "reasoning": "Urgência crítica devido a bloqueio de cartão em situação de saúde (hospital).", "suggested_response": "Prezado,\n\nLamentamos profundamente o ocorrido. Identificamos o bloqueio preventivo e já realizamos a liberação imediata do seu cartão para uso. Atenciosamente."}
 
-4. [INPUT]: \"Esqueci minha senha do aplicativo e não consigo realizar o primeiro acesso. Podem me ajudar?\"
-   [OUTPUT]: {\"classification\": \"Produtivo\", \"confidence\": 0.99, \"sentiment\": \"Neutro\", \"sentiment_score\": 0.0, \"urgency\": \"Média\", \"urgency_score\": 0.6, \"priority_score\": 0.6, \"reasoning\": \"Bloqueio de acesso técnico (senha), requer suporte padrão.\", \"suggested_response\": \"Olá! Para recuperar sua senha, basta clicar em 'Esqueci minha senha' na tela inicial do app. Enviamos um link de recuperação para seu email cadastrado. Atenciosamente.\"}
+2. [INPUT]: "Bom dia! Só passando para desejar uma ótima semana a todos."
+   [OUTPUT]: {"classification": "Improdutivo", "confidence": 0.98, "sentiment": "Positivo", "sentiment_score": 0.8, "urgency": "Baixa", "urgency_score": 0.1, "priority_score": 0.1, "reasoning": "Saudação social sem demanda operacional.", "suggested_response": "Bom dia! Agradecemos o contato e desejamos uma excelente semana para você também!"}
 
-5. [INPUT]: \"Segue em anexo o comprovante da transferência de R$ 200,00 que realizei hoje cedo para minha conta corrente.\"
-   [OUTPUT]: {\"classification\": \"Produtivo\", \"confidence\": 0.95, \"sentiment\": \"Neutro\", \"sentiment_score\": 0.1, \"urgency\": \"Média\", \"urgency_score\": 0.4, \"priority_score\": 0.4, \"reasoning\": \"Envio de documento comprobatório de rotina operacional.\", \"suggested_response\": \"Recebemos seu comprovante com sucesso. O valor será processado e creditado em sua conta conforme os prazos padrão. Obrigado!\"}
+3. [INPUT]: "Esqueci minha senha do aplicativo e não consigo realizar o primeiro acesso. Podem me ajudar?"
+   [OUTPUT]: {"classification": "Produtivo", "confidence": 0.99, "sentiment": "Neutro", "sentiment_score": 0.0, "urgency": "Média", "urgency_score": 0.6, "priority_score": 0.6, "reasoning": "Bloqueio de acesso técnico (senha), requer suporte padrão.", "suggested_response": "Olá! Para recuperar sua senha, basta clicar em 'Esqueci minha senha' na tela inicial do app. Enviamos um link de recuperação para seu email cadastrado. Atenciosamente."}
+
+4. [INPUT]: "Segue em anexo o comprovante da transferência de R$ 200,00 que realizei hoje cedo para minha conta corrente."
+   [OUTPUT]: {"classification": "Produtivo", "confidence": 0.95, "sentiment": "Neutro", "sentiment_score": 0.1, "urgency": "Média", "urgency_score": 0.4, "priority_score": 0.4, "reasoning": "Envio de documento comprobatório de rotina operacional.", "suggested_response": "Recebemos seu comprovante com sucesso. O valor será processado e creditado em sua conta conforme os prazos padrão. Obrigado!"}
 """
 
 class LLMService:
@@ -72,7 +76,8 @@ class LLMService:
 
         try:
             # Sanitização básica de input
-            safe_text = text[:4000] # Evitar overflow de tokens por segurança
+            input_text = str(text) if text else ""
+            safe_text = input_text[:4000] 
             prompt = f"{SYSTEM_PROMPT}\n\n[ANALISE O SEGUINTE TEXTO]:\n{safe_text}\n"
             
             response = self.model.generate_content(
@@ -136,12 +141,16 @@ class LLMService:
         # 3. Campos de Texto
         defaults = {
             "reasoning": "Análise processada com parâmetros de segurança.",
-            "suggested_response": "Prezado,\\n\\nRecebemos sua mensagem e já estamos analisando o ocorrido.\\n\\nAtenciosamente."
+            "suggested_response": "Prezado,\n\nRecebemos sua mensagem e já estamos analisando o ocorrido.\n\nAtenciosamente."
         }
         for field, default in defaults.items():
             if field not in data or not data[field]:
                 data[field] = default
         
+        # 4. Limpeza de Encoding (Unescape literal \n)
+        if isinstance(data.get("suggested_response"), str):
+            data["suggested_response"] = data["suggested_response"].replace("\\n", "\n")
+
         return data
 
     def _fallback_error(self, reason: str) -> Dict[str, Any]:
