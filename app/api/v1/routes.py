@@ -56,17 +56,9 @@ async def analyze_email_endpoint(
 
     # 2. IA Processing
     logger.info("Cache Miss: Chamando API GenAI (Gemini)")
-    llm_dict = llm_service.analyze(final_text)
-
-    # 3. Pydantic validation (Integridade da Response)
-    try:
-        response_model = AnalyzeEmailResponse(**llm_dict)
-    except ValidationError as e:
-        logger.error(f"Falha de schema ao montar a resposta da IA: {e}")
-        fallback_data = llm_service._fallback_error("Falha estrutural (Schema ValidationError).")
-        response_model = AnalyzeEmailResponse(**fallback_data)
+    llm_dict = await llm_service.analyze(final_text)
 
     # 4. Gravação de Cache Simple stateful e TTL
-    cache.set(final_text, response_model.model_dump())
+    cache.set(final_text, llm_dict)
     
-    return response_model
+    return AnalyzeEmailResponse(**llm_dict)
