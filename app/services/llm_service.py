@@ -35,14 +35,14 @@ Calcule de 0.0 a 1.0. Prioridade = (Urgência + (Absoluto de Sentimento se Negat
 Retorne APENAS o JSON no formato:
 {
   "classification": "Produtivo" | "Improdutivo",
-  "confidence": float (0.0-1.0),
+  "confidence": float,
   "sentiment": "Positivo" | "Neutro" | "Negativo",
-  "sentiment_score": float (-1.0 a 1.0),
+  "sentiment_score": float,
   "urgency": "Alta" | "Média" | "Baixa",
-  "urgency_score": float (0.0-1.0),
-  "priority_score": float (0.0-1.0),
+  "urgency_score": float,
+  "priority_score": float,
   "reasoning": "Resumo técnico da decisão",
-  "suggested_response": "Texto corporativo em PT-BR (NÃO use quebras de linha ou caracteres especiais)."
+  "suggested_response": "Texto corporativo em PT-BR (NÃO use quebras de linha)."
 }
 
 ### EXEMPLOS DE REFERÊNCIA
@@ -83,6 +83,9 @@ class LLMService:
                 generation_config=self.generation_config
             )
             
+            if not response or not response.text:
+                return self._fallback_error("Resposta vazia da IA.")
+                
             return self._parse_json(response.text)
         except Exception as e:
             logger.error(f"LLM Error generating content: {e}")
@@ -108,62 +111,70 @@ class LLMService:
             return self._fallback_error("Falha estrutural no JSON da IA.")
 
     def _normalize_and_ensure(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Normaliza campos de enum e garante tipos numéricos corretos."""
+        """Normaliza campos de enum e garante tipos numéricos corretos com fallbacks agressivos."""
         
         # 1. Normalização de Enum
         def to_enum_case(val, options):
-            if not isinstance(val, str): return val
+            if not val or not isinstance(val, str): 
+                return options[0] # Fallback para o primeiro se for None ou não string
             for opt in options:
                 if val.lower() == opt.lower(): return opt
             return options[0]
 
         data["classification"] = to_enum_case(data.get("classification"), ["Produtivo", "Improdutivo"])
-        data["sentiment"] = to_enum_case(data.get("sentiment"), ["Positivo", "Neutro", "Negativo"])
-        data["urgency"] = to_enum_case(data.get("urgency"), ["Baixa", "Média", "Alta"])
+        data["sentiment"] = to_enum_case(data.get("sentiment"), ["Neutro", "Positivo", "Negativo"])
+        data["urgency"] = to_enum_case(data.get("urgency"), ["Média", "Baixa", "Alta"])
 
         # 2. Garantia de Scores
         def clamp(val, min_v, max_v, default):
             try:
+                if val is None: return default
                 f_val = float(val)
                 return max(min_v, min(max_v, f_val))
             except (ValueError, TypeError):
                 return default
 
-        data["confidence"] = clamp(data.get("confidence"), 0.0, 1.0, 0.5)
+        data["confidence"] = clamp(data.get("confidence"), 0.0, 1.0, 0.8)
         data["sentiment_score"] = clamp(data.get("sentiment_score"), -1.0, 1.0, 0.0)
         data["urgency_score"] = clamp(data.get("urgency_score"), 0.0, 1.0, 0.5)
         data["priority_score"] = clamp(data.get("priority_score"), 0.0, 1.0, 0.5)
 
         # 3. Campos de Texto (SEM \n)
-        defaults = {
-            "reasoning": "Análise processada com parâmetros de segurança.",
-            "suggested_response": "Prezado, recebemos sua mensagem e já estamos analisando o ocorrido. Atenciosamente."
-        }
-        for field, default in defaults.items():
-            if field not in data or not data[field]:
-                data[field] = default
+        if not data.get("reasoning") or not isinstance(data.get("reasoning"), str):
+            data["reasoning"] = "Análise concluída com sucesso."
+            
+        if not data.get("suggested_response") or not isinstance(data.get("suggested_response"), str):
+            data["suggested_response"] = "Olá, recebemos seu e-mail e estamos analisando as informações para lhe retornar o quanto antes. Atenciosamente."
         
-        # 4. Limpeza de Encoding (Remoção total de \n ou literal \\n)
-        if isinstance(data.get("suggested_response"), str):
-            resp = data["suggested_response"]
-            # Remover quebras reais e literais para evitar sujeira na UI
-            resp = resp.replace("\n", " ").replace("\r", " ").replace("\\n", " ")
-            data["suggested_response"] = re.sub(r'\s+', ' ', resp).strip()
+        # 4. Limpeza de Encoding e Espaços
+        resp = data["suggested_response"]
+        resp = resp.replace("\n", " ").replace("\r", " ").replace("\\n", " ")
+        data["suggested_response"] = re.sub(r'\s+', ' ', resp).strip()
 
         return data
 
     def _fallback_error(self, reason: str) -> Dict[str, Any]:
-        return self._normalize_and_ensure({"reasoning": f"Erro técnico: {reason}"})
+        # Retorna um set mínimo de dados para não quebrar o Pydantic
+        return self._normalize_and_ensure({
+            "classification": "Produtivo",
+            "confidence": 0.5,
+            "sentiment": "Neutro",
+            "sentiment_score": 0.0,
+            "urgency": "Média",
+            "urgency_score": 0.5,
+            "priority_score": 0.5,
+            "reasoning": f"Erro técnico: {reason}"
+        })
         
     def _fallback_no_api_key(self, text: str) -> Dict[str, Any]:
-        is_urgent = any(word in text.lower() for word in ["urgente", "hoje", "bloqueio", "prazo"])
+        is_urgent = any(word in text.lower() for word in ["urgente", "hoje", "bloqueio", "prazo", "senha"])
         return self._normalize_and_ensure({
-            "classification": "Produtivo" if len(text) > 20 else "Improdutivo",
-            "confidence": 0.85,
+            "classification": "Produtivo" if len(text) > 15 else "Improdutivo",
+            "confidence": 0.9,
             "urgency": "Alta" if is_urgent else "Baixa",
-            "urgency_score": 0.95 if is_urgent else 0.2,
-            "priority_score": 0.9 if is_urgent else 0.25,
-            "reasoning": "Análise em modo de demonstração local."
+            "urgency_score": 0.9 if is_urgent else 0.2,
+            "priority_score": 0.8 if is_urgent else 0.2,
+            "reasoning": "Simulação local (Offline)."
         })
 
 llm_service = LLMService()
