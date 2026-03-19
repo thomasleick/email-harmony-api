@@ -4,13 +4,13 @@ Backend financeiro escalável construído com **FastAPI** e orquestrado por Clea
 
 ## 🚀 Arquitetura e Engenharia de Elite
 
-Este projeto entrega um motor de triagem de nível corporativo:
-1.  **Inteligência Multidimensional:** Além de classificar entre "Produtivo" e "Improdutivo", o motor detecta **Sentimento** (-1.0 a 1.0) e **Urgência**, gerando um **Priority Score** (0.0 a 1.0) para triagem automática.
-2.  **NLP Preprocessing:** Pipeline dedicado para normalização Unicode, remoção de cabeçalhos de email (`From:`, `Subject:`) e colapso de espaços mortos em arquivos `.pdf` e `.txt`.
-3.  **LLM Determinístico:** Configurado em `temperature: 0.0` para máxima consistência nas respostas sugeridas.
-4.  **Resiliência & Parsing:** Sistema de `Fallback` estruturado e reparo de JSON via Regex. Não há crashes por formatação da IA.
-5.  **Cache Inteligente v2:** Sistema de cache em memória com assinatura SHA-256 e **versionamento de chave**, garantindo que mudanças no schema invalidem dados obsoletos automaticamente.
-6.  **Pydantic V2:** Validação rigorosa de tipos e ranges (ex: scores sempre entre 0 e 1).
+Este projeto entrega um motor de triagem de nível corporativo e resiliente:
+1.  **Motor Assíncrono:** Backend totalmente não-bloqueante para máxima concorrência.
+2.  **Resiliência de Produção:** Implementação de retries com **Exponential Backoff** (via `tenacity`) e timeouts por requisição.
+3.  **Inteligência Multidimensional:** Classificação, Sentimento (-1.0 a 1.0) e Urgência com **Priority Score** (0.0 a 1.0).
+4.  **NLP Preprocessing:** Pipeline para normalização Unicode e extração determinística de arquivos `.pdf`.
+5.  **Schema Robust com Pydantic:** Validação rigorosa e fallbacks automáticos para garantir zero crashes em caso de respostas inesperadas da IA.
+6.  **Cache Inteligente v2:** Sistema de cache em memória com assinatura SHA-256 e versionamento de chave.
 
 ## 🛠 Tecnologias
 
@@ -41,11 +41,22 @@ Este projeto entrega um motor de triagem de nível corporativo:
     uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ```
 
-## 🧪 Testes
-
 ```bash
 pytest tests/ -v
 ```
+
+## 🐳 Docker Deployment
+
+Para rodar a aplicação em um container (estilo Render):
+
+1.  **Build:**
+    ```bash
+    docker build -t email-harmony-api .
+    ```
+2.  **Run:**
+    ```bash
+    docker run -p 8000:8000 --env-file .env email-harmony-api
+    ```
 
 ## 🔌 API Endpoint: `POST /api/v1/analyze-email`
 
