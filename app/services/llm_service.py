@@ -30,7 +30,6 @@ Sua tarefa é analisar o teor de emails, classificar intenção, detectar sentim
 
 ### 4. PRIORIDADE (priority_score)
 Calcule de 0.0 a 1.0. Prioridade = (Urgência + (Absoluto de Sentimento se Negativo)) / 2.
-Ex: Urgência Alta (0.9) + Sentimento Negativo (-0.8) = Prioridade muito alta (proximo de 1.0).
 
 ### FORMATO DE SAÍDA (JSON ESTRITO)
 Retorne APENAS o JSON no formato:
@@ -42,22 +41,22 @@ Retorne APENAS o JSON no formato:
   "urgency": "Alta" | "Média" | "Baixa",
   "urgency_score": float (0.0-1.0),
   "priority_score": float (0.0-1.0),
-  "reasoning": "Resumo técnico da decisão (máx 200 caracteres)",
-  "suggested_response": "Texto corporativo em PT-BR."
+  "reasoning": "Resumo técnico da decisão",
+  "suggested_response": "Texto corporativo em PT-BR (NÃO use quebras de linha ou caracteres especiais)."
 }
 
 ### EXEMPLOS DE REFERÊNCIA
 1. [INPUT]: "MEU CARTÃO NÃO FUNCIONA E PRECISO PAGAR O HOSPITAL AGORA!"
-   [OUTPUT]: {"classification": "Produtivo", "confidence": 1.0, "sentiment": "Negativo", "sentiment_score": -0.9, "urgency": "Alta", "urgency_score": 1.0, "priority_score": 1.0, "reasoning": "Urgência crítica devido a bloqueio de cartão em situação de saúde (hospital).", "suggested_response": "Prezado,\n\nLamentamos profundamente o ocorrido. Identificamos o bloqueio preventivo e já realizamos a liberação imediata do seu cartão para uso. Atenciosamente."}
+   [OUTPUT]: {"classification": "Produtivo", "confidence": 1.0, "sentiment": "Negativo", "sentiment_score": -0.9, "urgency": "Alta", "urgency_score": 1.0, "priority_score": 1.0, "reasoning": "Urgência crítica devido a bloqueio de cartão.", "suggested_response": "Prezado, lamentamos profundamente o ocorrido. Identificamos o bloqueio preventivo e já realizamos a liberação imediata do seu cartão para uso. Atenciosamente."}
 
 2. [INPUT]: "Bom dia! Só passando para desejar uma ótima semana a todos."
-   [OUTPUT]: {"classification": "Improdutivo", "confidence": 0.98, "sentiment": "Positivo", "sentiment_score": 0.8, "urgency": "Baixa", "urgency_score": 0.1, "priority_score": 0.1, "reasoning": "Saudação social sem demanda operacional.", "suggested_response": "Bom dia! Agradecemos o contato e desejamos uma excelente semana para você também!"}
+   [OUTPUT]: {"classification": "Improdutivo", "confidence": 0.98, "sentiment": "Positivo", "sentiment_score": 0.8, "urgency": "Baixa", "urgency_score": 0.1, "priority_score": 0.1, "reasoning": "Saudação social.", "suggested_response": "Bom dia! Agradecemos o contato e desejamos uma excelente semana para você também!"}
 
 3. [INPUT]: "Esqueci minha senha do aplicativo e não consigo realizar o primeiro acesso. Podem me ajudar?"
-   [OUTPUT]: {"classification": "Produtivo", "confidence": 0.99, "sentiment": "Neutro", "sentiment_score": 0.0, "urgency": "Média", "urgency_score": 0.6, "priority_score": 0.6, "reasoning": "Bloqueio de acesso técnico (senha), requer suporte padrão.", "suggested_response": "Olá! Para recuperar sua senha, basta clicar em 'Esqueci minha senha' na tela inicial do app. Enviamos um link de recuperação para seu email cadastrado. Atenciosamente."}
+   [OUTPUT]: {"classification": "Produtivo", "confidence": 0.99, "sentiment": "Neutro", "sentiment_score": 0.0, "urgency": "Média", "urgency_score": 0.6, "priority_score": 0.6, "reasoning": "Bloqueio de acesso técnico.", "suggested_response": "Olá! Para recuperar sua senha, basta clicar em 'Esqueci minha senha' na tela inicial do app. Enviamos um link de recuperação para seu email cadastrado."}
 
 4. [INPUT]: "Segue em anexo o comprovante da transferência de R$ 200,00 que realizei hoje cedo para minha conta corrente."
-   [OUTPUT]: {"classification": "Produtivo", "confidence": 0.95, "sentiment": "Neutro", "sentiment_score": 0.1, "urgency": "Média", "urgency_score": 0.4, "priority_score": 0.4, "reasoning": "Envio de documento comprobatório de rotina operacional.", "suggested_response": "Recebemos seu comprovante com sucesso. O valor será processado e creditado em sua conta conforme os prazos padrão. Obrigado!"}
+   [OUTPUT]: {"classification": "Produtivo", "confidence": 0.95, "sentiment": "Neutro", "sentiment_score": 0.1, "urgency": "Média", "urgency_score": 0.4, "priority_score": 0.4, "reasoning": "Envio de documento de rotina.", "suggested_response": "Recebemos seu comprovante com sucesso. O valor será processado e creditado conforme os prazos padrão. Obrigado!"}
 """
 
 class LLMService:
@@ -75,7 +74,6 @@ class LLMService:
              return self._fallback_no_api_key(text)
 
         try:
-            # Sanitização básica de input
             input_text = str(text) if text else ""
             safe_text = input_text[:4000] 
             prompt = f"{SYSTEM_PROMPT}\n\n[ANALISE O SEGUINTE TEXTO]:\n{safe_text}\n"
@@ -91,7 +89,6 @@ class LLMService:
             return self._fallback_error(str(e))
 
     def _parse_json(self, raw_text: str) -> Dict[str, Any]:
-        # Limpeza agressiva de markdown blocks (Gemini às vezes ignora o mime_type e coloca ```json)
         clean_text = raw_text.strip()
         if clean_text.startswith("```"):
             clean_text = re.sub(r'^```[a-z]*\n?', '', clean_text, flags=re.MULTILINE)
@@ -101,7 +98,6 @@ class LLMService:
             data = json.loads(clean_text)
             return self._normalize_and_ensure(data)
         except json.JSONDecodeError:
-            # Fallback secundário via Regex se falhar o carregamento direto
             match = re.search(r'\{.*\}', clean_text, re.DOTALL)
             if match:
                 try:
@@ -114,18 +110,18 @@ class LLMService:
     def _normalize_and_ensure(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Normaliza campos de enum e garante tipos numéricos corretos."""
         
-        # 1. Normalização de Enum (Case safety)
+        # 1. Normalização de Enum
         def to_enum_case(val, options):
             if not isinstance(val, str): return val
             for opt in options:
                 if val.lower() == opt.lower(): return opt
-            return options[0] # Default para o primeiro se não achar
+            return options[0]
 
         data["classification"] = to_enum_case(data.get("classification"), ["Produtivo", "Improdutivo"])
         data["sentiment"] = to_enum_case(data.get("sentiment"), ["Positivo", "Neutro", "Negativo"])
         data["urgency"] = to_enum_case(data.get("urgency"), ["Baixa", "Média", "Alta"])
 
-        # 2. Garantia de Scores (Bounds safety)
+        # 2. Garantia de Scores
         def clamp(val, min_v, max_v, default):
             try:
                 f_val = float(val)
@@ -138,18 +134,21 @@ class LLMService:
         data["urgency_score"] = clamp(data.get("urgency_score"), 0.0, 1.0, 0.5)
         data["priority_score"] = clamp(data.get("priority_score"), 0.0, 1.0, 0.5)
 
-        # 3. Campos de Texto
+        # 3. Campos de Texto (SEM \n)
         defaults = {
             "reasoning": "Análise processada com parâmetros de segurança.",
-            "suggested_response": "Prezado,\n\nRecebemos sua mensagem e já estamos analisando o ocorrido.\n\nAtenciosamente."
+            "suggested_response": "Prezado, recebemos sua mensagem e já estamos analisando o ocorrido. Atenciosamente."
         }
         for field, default in defaults.items():
             if field not in data or not data[field]:
                 data[field] = default
         
-        # 4. Limpeza de Encoding (Unescape literal \n)
+        # 4. Limpeza de Encoding (Remoção total de \n ou literal \\n)
         if isinstance(data.get("suggested_response"), str):
-            data["suggested_response"] = data["suggested_response"].replace("\\n", "\n")
+            resp = data["suggested_response"]
+            # Remover quebras reais e literais para evitar sujeira na UI
+            resp = resp.replace("\n", " ").replace("\r", " ").replace("\\n", " ")
+            data["suggested_response"] = re.sub(r'\s+', ' ', resp).strip()
 
         return data
 
@@ -164,7 +163,7 @@ class LLMService:
             "urgency": "Alta" if is_urgent else "Baixa",
             "urgency_score": 0.95 if is_urgent else 0.2,
             "priority_score": 0.9 if is_urgent else 0.25,
-            "reasoning": "Análise em modo de demonstração local (Offline)."
+            "reasoning": "Análise em modo de demonstração local."
         })
 
 llm_service = LLMService()
